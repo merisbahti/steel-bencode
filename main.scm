@@ -1,6 +1,7 @@
 (require "./test.scm")
 (require "steel/sorting/quick-sort.scm")
 
+(provide bencode)
 (define (bencode value)
   (cond
     [(string? value)
