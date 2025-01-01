@@ -121,7 +121,7 @@
 (assert ((parse-map (parse-const "1") string->int) "0") (parse-error "Expected 1 but found: 0"))
 
 (define (parse-number)
-  (define parser
+  (parse-map
     (parse-one
       (parse-all
         (parse-maybe (parse-const "-"))
@@ -130,11 +130,10 @@
         (parse-integer))
       (parse-all
         (parse-maybe (parse-const "-"))
-        (parse-integer))))
-
-  (parse-map parser (fn (values)
-                     (define multiplier (if (null? (car values)) 1 -1))
-                     (* multiplier (string->number (string-join (map to-string (cdr values))))))))
+        (parse-integer)))
+    (fn (values)
+      (define multiplier (if (null? (car values)) 1 -1))
+      (* multiplier (string->number (string-join (map to-string (cdr values))))))))
 
 (assert ((parse-number) "-1") (parse-ok -1 ""))
 (assert ((parse-number) "1") (parse-ok 1 ""))
