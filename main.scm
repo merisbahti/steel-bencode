@@ -54,20 +54,49 @@
 (assert ((parse-const "hello") "hello world") (parse-ok "hello" " world"))
 (assert ((parse-const "hellox") "hello world") (parse-error "Expected hellox but found: hello world"))
 
+(define (parse-map parser mapper)
+  (fn (input)
+    (define result (parser input))
+    (if (Err? result) result (cons (mapper (car result)) (cdr result)))))
+(assert ((parse-map (parse-const "1") string->int) "1") (parse-ok 1 ""))
+(assert ((parse-map (parse-const "1") string->int) "0") (parse-error "Expected 1 but found: 0"))
+
+(define (parse-pred pred)
+  (fn (input)
+    (when (eq? (string-length input) 0) (return! (parse-error "Applied parse-pred to empty string")))
+    (define first-char (substring input 0 1))
+    (if
+      (pred first-char)
+      (parse-ok first-char (substring input 1))
+      (parse-error "char did not match predicate: " first-char))))
+(assert ((parse-pred string->number) "1") (parse-ok "1" ""))
+(assert ((parse-pred string->number) "d") (parse-error "char did not match predicate: d"))
+
+(define (parse-many parser)
+  (parse-map
+    (fn (input)
+      (define (iter input acc)
+        (when (empty? input) (return! acc))
+        (define result (parser input))
+
+        (if (Err? result)
+          (parse-ok acc input)
+          (iter (cdr result) (immutable-vector-push acc (car result)))))
+      (iter input (immutable-vector)))
+    immutable-vector->list))
+
+(assert ((parse-many (parse-const "a")) "aaaaab") (parse-ok '("a" "a" "a" "a" "a") "b"))
+(assert ((parse-many (parse-const "a")) "qaaaaab") (parse-ok '() "qaaaaab"))
+
 (define (parse-integer)
   (fn (input)
-    (define (iter input acc)
-      (if (zero? (string-length input)) (return! acc))
-      (define first-chr (substring input 0 1))
-      (if (string->number first-chr)
-        (iter (substring input 1) (string-append acc first-chr))
-        acc))
-    (define parsed (iter input ""))
+    (define parsed ((parse-many (parse-pred string->number)) input))
 
     (if
-      (eq? parsed "")
+      (null? (car parsed))
       (parse-error "Expected number but found: " input)
-      (parse-ok (string->number parsed) (substring input (string-length parsed))))))
+      (parse-ok (string->number (string-join (car parsed))) (cdr parsed)))))
+
 (assert ((parse-integer) "10") (parse-ok 10 ""))
 (assert ((parse-integer) "asbc") (parse-error "Expected number but found: asbc"))
 
@@ -112,13 +141,6 @@
                           (iter xs input '())))
 (assert ((parse-all (parse-const "a") (parse-const "b")) "abb") (parse-ok (list "a" "b") "b"))
 (assert ((parse-all (parse-const "a") (parse-const "b")) "aqb") (parse-error "Expected b but found: qb"))
-
-(define (parse-map parser mapper)
-  (fn (input)
-    (define result (parser input))
-    (if (Err? result) result (cons (mapper (car result)) (cdr result)))))
-(assert ((parse-map (parse-const "1") string->int) "1") (parse-ok 1 ""))
-(assert ((parse-map (parse-const "1") string->int) "0") (parse-error "Expected 1 but found: 0"))
 
 (define (parse-number)
   (parse-map
