@@ -145,7 +145,6 @@
 
 (assert ((parse-number) "1234567890") (parse-ok 1234567890 ""))
 (assert ((parse-number) "1234567890hello") (parse-ok 1234567890 "hello"))
-(substring "abc" 0 1)
 
 (define (parse-byte-string)
   (fn (input)
@@ -166,11 +165,6 @@
     (define bytes (take buffer bytes-to-parse))
     (define rest (drop buffer bytes-to-parse))
 
-    (displayln bytes rest
-
-      (string-append
-        (bytes->string/utf8 (list->bytes rest))
-        (substring input bytes-to-parse (string-length input))))
     (parse-ok
       (bytes->string/utf8 (list->bytes bytes))
       (string-append
