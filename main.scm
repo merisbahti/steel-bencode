@@ -145,3 +145,36 @@
 
 (assert ((parse-number) "1234567890") (parse-ok 1234567890 ""))
 (assert ((parse-number) "1234567890hello") (parse-ok 1234567890 "hello"))
+(substring "abc" 0 1)
+
+(define (parse-byte-string)
+  (fn (input)
+    (define initial-result
+      ((parse-all
+          (parse-integer)
+          (parse-const ":"))
+        input))
+    (when (Err? initial-result) (return! initial-result))
+    (define bytes-to-parse (caar initial-result))
+    (define input (cdr initial-result))
+
+    (define buffer (~>
+                    (substring input 0 bytes-to-parse)
+                    (string->bytes)
+                    (bytes->list)))
+
+    (define bytes (take buffer bytes-to-parse))
+    (define rest (drop buffer bytes-to-parse))
+
+    (displayln bytes rest
+
+      (string-append
+        (bytes->string/utf8 (list->bytes rest))
+        (substring input bytes-to-parse (string-length input))))
+    (parse-ok
+      (bytes->string/utf8 (list->bytes bytes))
+      (string-append
+        (bytes->string/utf8 (list->bytes rest))
+        (substring input bytes-to-parse)))))
+
+(assert ((parse-byte-string) "3:hello") (parse-ok "hel" "lo"))
