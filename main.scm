@@ -37,9 +37,11 @@
 (assert (bencode (hash "meaning" 42 "wiki" "bencode")) "d4:wiki7:bencode7:meaningi42ee")
 (assert (bencode (hash)) "de")
 (assert (bencode displayln) "de")
+
 (assert (bencode (hash)) "de")
 
-(define (parse-error . values) (Err (string-join (map to-string values))))
+(define (parse-error . values) (Err (string-join
+                                     (map (fn (x) (if (string? x) x (to-string x))) values))))
 (define (parse-ok value rest) (cons value rest))
 
 (define (parse-const constant)
@@ -69,35 +71,77 @@
 (assert ((parse-integer) "10") (parse-ok 10 ""))
 (assert ((parse-integer) "asbc") (parse-error "Expected number but found: asbc"))
 
-(define (parse-number)
+(define (parse-maybe parser)
   (fn (input)
-    (define is-neg ((parse-const "-") input))
-    (define neg-rest (if (Err? is-neg) input (cdr is-neg)))
-    (define whole-part ((parse-integer) neg-rest))
-    (when (Err? whole-part) (return! whole-part))
+    (define result (parser input))
+    (if (Err? result)
+      (cons '() input)
+      result)))
 
-    (define decimal-point ((parse-const ".") (cdr whole-part)))
-    (when (Err? decimal-point) (return!
-                                (parse-ok
-                                  (if (pair? is-neg) (* -1 (car whole-part)) (car whole-part))
-                                  (cdr whole-part))))
+(define (parse-one . xs)
+  (fn (input)
+    (if (empty? xs) (parse-error "No valid parsers passed to " (function-name parse-one)))
+    (define (iter parsers errors-so-far)
+      (if (null? parsers) (return! (Err errors-so-far)))
+      (define current-result ((car parsers) input))
+      (if
+        (pair? current-result)
+        current-result
+        (iter (cdr parsers) (cons current-result errors-so-far))))
+    (define result (iter xs '()))
+    (if
+      (Err? result)
+      (parse-error
+        "Got the following failures:\n"
+        (string-join (map (fn (x) (~> x (Err->value) (string-append "\n"))) (Err->value result))))
+      result)))
+(assert ((parse-one (parse-const "a") (parse-const "b")) "abb") (parse-ok "a" "bb"))
+(assert ((parse-one (parse-const "a") (parse-const "b")) "baa") (parse-ok "b" "aa"))
+(assert ((parse-one (parse-const "a") (parse-const "b")) "q")
+  (Err
+    "Got the following failures:\nExpected b but found: q\nExpected a but found: q\n"))
 
-    (define decimal-part ((parse-integer) (cdr decimal-point)))
+(define (parse-all . xs) (fn (input)
+                          (define (iter parsers input acc)
+                            (when (empty? parsers) (return! (cons (reverse acc) input)))
 
-    (parse-ok (string->number (string-join (list
-                                            (if (pair? is-neg) "-" "")
-                                            (to-string (car whole-part))
-                                            "."
-                                            (to-string (car decimal-part)))))
+                            (define result ((car parsers) input))
+                            (if (Err? result)
+                              result
+                              (iter (cdr parsers) (cdr result) (cons (car result) acc))))
+                          (iter xs input '())))
+(assert ((parse-all (parse-const "a") (parse-const "b")) "abb") (parse-ok (list "a" "b") "b"))
+(assert ((parse-all (parse-const "a") (parse-const "b")) "aqb") (parse-error "Expected b but found: qb"))
 
-      (cdr decimal-part))))
+(define (parse-map parser mapper)
+  (fn (input)
+    (define result (parser input))
+    (if (Err? result) result (cons (mapper (car result)) (cdr result)))))
+(assert ((parse-map (parse-const "1") string->int) "1") (parse-ok 1 ""))
+(assert ((parse-map (parse-const "1") string->int) "0") (parse-error "Expected 1 but found: 0"))
+
+(define (parse-number)
+  (define parser
+    (parse-one
+      (parse-all
+        (parse-maybe (parse-const "-"))
+        (parse-integer)
+        (parse-const ".")
+        (parse-integer))
+      (parse-all
+        (parse-maybe (parse-const "-"))
+        (parse-integer))))
+
+  (parse-map parser (fn (values)
+                     (define multiplier (if (null? (car values)) 1 -1))
+                     (* multiplier (string->number (string-join (map to-string (cdr values))))))))
+
 (assert ((parse-number) "-1") (parse-ok -1 ""))
 (assert ((parse-number) "1") (parse-ok 1 ""))
 (assert ((parse-number) "-0") (parse-ok 0 ""))
 (assert ((parse-number) "-1000") (parse-ok -1000 ""))
+
 (assert ((parse-number) "-1.1000") (parse-ok -1.1000 ""))
 
 (assert ((parse-number) "1234567890") (parse-ok 1234567890 ""))
-(assert ((parse-number) "1234567890ello") (parse-ok 1234567890 "hello"))
-(define (bencode-parse input-string) ())
-(assert (bencode-parse "2:ö") "ö")
+(assert ((parse-number) "1234567890hello") (parse-ok 1234567890 "hello"))
