@@ -36,7 +36,8 @@
 (assert (bencode '("bencode" 2 3)) "l7:bencodei2ei3ee")
 (assert (bencode (hash "meaning" 42 "wiki" "bencode")) "d4:wiki7:bencode7:meaningi42ee")
 (assert (bencode (hash)) "de")
-(assert (bencode displayln) "de")
+
+(assert (call-with-exception-handler (fn (x) (to-string x)) (fn () (bencode displayln))) "Error: Generic:  cannot bencode value: #<bytecode-closure>")
 
 (assert (bencode (hash)) "de")
 
@@ -174,22 +175,31 @@
           (parse-integer)
           (parse-const ":"))
         input))
+
     (when (Err? initial-result) (return! initial-result))
+
     (define bytes-to-parse (caar initial-result))
     (define input (cdr initial-result))
 
+    (define symbol-length (length (string->list input)))
+
     (define buffer (~>
-                    (substring input 0 bytes-to-parse)
+                    (substring input 0 (min symbol-length bytes-to-parse))
                     (string->bytes)
                     (bytes->list)))
 
+    (when (> bytes-to-parse (length buffer)) (return! (parse-error "not enough bytes to parse in buffer: " input)))
     (define bytes (take buffer bytes-to-parse))
-    (define rest (drop buffer bytes-to-parse))
+    (define rest (drop buffer (min (length buffer) bytes-to-parse)))
 
     (parse-ok
       (bytes->string/utf8 (list->bytes bytes))
       (string-append
         (bytes->string/utf8 (list->bytes rest))
-        (substring input bytes-to-parse)))))
+        (substring input (min symbol-length bytes-to-parse))))))
 
 (assert ((parse-byte-string) "3:hello") (parse-ok "hel" "lo"))
+(assert ((parse-byte-string) "3:hello") (parse-ok "hel" "lo"))
+(assert ((parse-byte-string) (bencode "ö")) (parse-ok "ö" ""))
+(assert ((parse-byte-string) "2:ö") (parse-ok "ö" ""))
+(assert ((parse-byte-string) "3:2") (parse-error "not enough bytes to parse in buffer: 2"))
