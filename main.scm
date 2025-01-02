@@ -212,7 +212,7 @@
     cadr))
 
 (assert ((parse-bencode-number) "i1e") (parse-ok 1 ""))
-(provide bencode-parse)
+
 (define (bencode-parse)
   (parse-one
     (parse-byte-string)
@@ -236,3 +236,18 @@
 (assert ((bencode-parse) "li1e4:hehee") (parse-ok '(1 "hehe") ""))
 (assert ((bencode-parse) "d4:hehei1eestuff") (parse-ok (hash "hehe" 1) "stuff"))
 (assert ((bencode-parse) "d4:hehei1e4:hahai1337eestuff") (parse-ok (hash "hehe" 1 "haha" 1337) "stuff"))
+(provide bencode-decode)
+(define (bencode-decode input)
+  (define parsed ((bencode-parse) (trim input)))
+
+  (cond
+    [(Err? parsed) parsed]
+    [(equal? (cdr parsed) "") (car parsed)]
+    [else (parse-error "parsed bencoded value, but found rest: " (cdr parsed))]))
+
+(assert (bencode-decode "le") '())
+(assert (bencode-decode "li1e4:hehee") '(1 "hehe"))
+(assert (bencode-decode "d4:hehei1eestuff") (parse-error "parsed bencoded value, but found rest: stuff"))
+(assert (bencode-decode "d4:hehei1e4:hahai1337eestuff") (parse-error "parsed bencoded value, but found rest: stuff"))
+(assert (bencode-decode "d4:hehei1ee") (hash "hehe" 1))
+(assert (bencode-decode "d4:hehei1e4:hahai1337ee") (hash "hehe" 1 "haha" 1337))
