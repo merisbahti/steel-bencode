@@ -252,12 +252,6 @@
                             input))
       (fn (value) (transduce (cadr value) (into-hashmap))))))
 
-(transduce (list
-            '(1 2)
-            '(3 4))
-
-  (into-hashmap))
-
 (assert ((bencode-parse) "le") (parse-ok '() ""))
 (assert ((bencode-parse) "li1e4:hehee") (parse-ok '(1 "hehe") ""))
 (assert ((bencode-parse) "d4:hehei1ee") (parse-ok (hash "hehe" 1) ""))
