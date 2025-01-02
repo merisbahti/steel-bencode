@@ -211,26 +211,6 @@
       (parse-const "e"))
     cadr))
 
-(define (lazy get-parser) (fn(input) ((get-parser) input)))
-(define nested-integer-list
-  (begin
-    (define expr '())
-    (define nested-list (parse-map (lazy
-                                    (fn () (parse-all
-                                            (parse-const "(")
-                                            (parse-many expr)
-                                            (parse-const ")"))))
-                         (fn (xs) (transduce xs
-                                   (dropping 1)
-                                   (taking (- (length xs) 2))
-                                   (into-list)))))
-
-    (set! expr (parse-one (parse-number) nested-list))
-    nested-list))
-(assert (nested-integer-list "(1)") (parse-ok (list (list 1)) ""))
-(assert (nested-integer-list "(1(3))") (parse-ok (list (list 1 (list '(3)))) ""))
-(assert (nested-integer-list "(1)") (parse-ok (list (list 1)) ""))
-
 (assert ((parse-bencode-number) "i1e") (parse-ok 1 ""))
 (provide bencode-parse)
 (define (bencode-parse)
