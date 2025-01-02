@@ -234,5 +234,5 @@
 
 (assert ((bencode-parse) "le") (parse-ok '() ""))
 (assert ((bencode-parse) "li1e4:hehee") (parse-ok '(1 "hehe") ""))
-(assert ((bencode-parse) "d4:hehei1ee") (parse-ok (hash "hehe" 1) ""))
-(assert ((bencode-parse) "d4:hehei1e4:hahai1337ee") (parse-ok (hash "hehe" 1 "haha" 1337) ""))
+(assert ((bencode-parse) "d4:hehei1eestuff") (parse-ok (hash "hehe" 1) "stuff"))
+(assert ((bencode-parse) "d4:hehei1e4:hahai1337eestuff") (parse-ok (hash "hehe" 1 "haha" 1337) "stuff"))
