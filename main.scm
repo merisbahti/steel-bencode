@@ -203,3 +203,45 @@
 (assert ((parse-byte-string) (bencode "ö")) (parse-ok "ö" ""))
 (assert ((parse-byte-string) "2:ö") (parse-ok "ö" ""))
 (assert ((parse-byte-string) "3:2") (parse-error "not enough bytes to parse in buffer: 2"))
+(define (parse-bencode-number)
+  (parse-map
+    (parse-all
+      (parse-const "i")
+      (parse-number)
+      (parse-const "e"))
+    cadr))
+
+(define (lazy get-parser) (fn(input) ((get-parser) input)))
+(define nested-integer-list
+  (begin
+    (define expr '())
+    (define nested-list (parse-map (lazy
+                                    (fn () (parse-all
+                                            (parse-const "(")
+                                            (parse-many expr)
+                                            (parse-const ")"))))
+                         (fn (xs) (transduce xs
+                                   (dropping 1)
+                                   (taking (- (length xs) 2))
+                                   (into-list)))))
+
+    (set! expr (parse-one (parse-number) nested-list))
+    nested-list))
+(assert (nested-integer-list "(1)") (parse-ok (list (list 1)) ""))
+(assert (nested-integer-list "(1(3))") (parse-ok (list (list 1 (list '(3)))) ""))
+(assert (nested-integer-list "(1)") (parse-ok (list (list 1)) ""))
+
+(assert ((parse-bencode-number) "i1e") (parse-ok 1 ""))
+(define (bencode-parse)
+  (parse-one
+    (parse-byte-string)
+    (parse-bencode-number)
+    (parse-map (fn (input) ((parse-all
+                              (parse-const "l")
+                              (parse-many (bencode-parse))
+                              (parse-const "e"))
+                            input))
+      cadr)))
+
+(assert ((bencode-parse) "le") (parse-ok '() ""))
+(assert ((bencode-parse) "li1e4:hehee") (parse-ok '(1 "hehe") ""))
