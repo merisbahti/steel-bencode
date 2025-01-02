@@ -232,6 +232,7 @@
 (assert (nested-integer-list "(1)") (parse-ok (list (list 1)) ""))
 
 (assert ((parse-bencode-number) "i1e") (parse-ok 1 ""))
+(provide bencode-parse)
 (define (bencode-parse)
   (parse-one
     (parse-byte-string)
@@ -241,7 +242,23 @@
                               (parse-many (bencode-parse))
                               (parse-const "e"))
                             input))
-      cadr)))
+      cadr)
+    (parse-map (fn (input) ((parse-all
+                              (parse-const "d")
+                              (parse-many (parse-all
+                                           (parse-byte-string)
+                                           (bencode-parse)))
+                              (parse-const "e"))
+                            input))
+      (fn (value) (transduce (cadr value) (into-hashmap))))))
+
+(transduce (list
+            '(1 2)
+            '(3 4))
+
+  (into-hashmap))
 
 (assert ((bencode-parse) "le") (parse-ok '() ""))
 (assert ((bencode-parse) "li1e4:hehee") (parse-ok '(1 "hehe") ""))
+(assert ((bencode-parse) "d4:hehei1ee") (parse-ok (hash "hehe" 1) ""))
+(assert ((bencode-parse) "d4:hehei1e4:hahai1337ee") (parse-ok (hash "hehe" 1 "haha" 1337) ""))
