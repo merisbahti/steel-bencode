@@ -27,11 +27,8 @@
   (bytes->string/utf8 (read-bytes (string->number parsed-nr) reader)))
 
 (assert (read-bencoded-string (make-output-string "5:hello")) "hello")
-
 (assert (read-bencoded-string (make-output-string "3hello")) "hello")
 (assert (read-bencoded-string (make-output-string "3:hello")) "hello")
-
-;; read bytes from string
 
 (define (read-integer reader)
   (define firstchar (peek-byte reader))
@@ -46,5 +43,16 @@
 (assert (read-integer (make-output-string "i13e")) 13)
 (assert (read-integer (make-output-string "ie")) #false)
 (assert (read-integer (make-output-string "i1.3e")) 1.3)
+
+(define (read-bencoded-value reader)
+  (define peeked (bytes->string/utf8 (bytes (peek-byte reader))))
+  (displayln peeked)
+  (cond
+    [(string->number peeked) (read-bencoded-string reader)]
+    [(equal? peeked "i") (read-integer reader)]
+    [else (error! "unexpected bencoded value")]))
+
+(read-bencoded-value (make-output-string "i13e"))
+(read-bencoded-value (make-output-string "5:hello"))
 
 ;;;
