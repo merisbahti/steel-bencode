@@ -21,10 +21,6 @@
   (while
     (not (equal? latest-char newline))
     (begin
-
-      (displayln (eof-object? latest-char))
-      (displayln latest-char)
-      (displayln (apply string (vector->list buff)))
       (set! latest-char (read-char port))
       (vector-push! buff latest-char)))
   (apply string (vector->list buff)))
@@ -49,6 +45,9 @@
 (define writer (tcp-stream-writer stream))
 (write-string (bencode (hash "op" "eval" "code" "(+ 1337\n1)")) writer)
 
-(displayln (read-until-eof reader))
+(displayln "hello")
+(displayln (read-line-from-port reader))
+
+; (displayln (read-until-eof reader))
 
 ; stuff?
