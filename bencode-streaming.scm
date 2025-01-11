@@ -43,6 +43,17 @@
 (assert (read-integer (make-output-string "i1.3e")) 1.3)
 
 (define (read-list reader)
+  (let [(first (read-byte reader))]
+    (unless (equal? first l-byte)
+      (error! (string-append "err, expected l but found: " (to-string first)))))
+  (define parsed-list (mutable-vector))
+
+  (while (not (equal? (peek-byte reader) e-byte))
+    (vector-push! parsed-list (read-bencoded-value reader)))
+
+  (vector->list parsed-list))
+
+(define (read-dict reader)
 
   (let [(first (read-byte reader))]
     (unless (equal? first l-byte)
@@ -59,7 +70,7 @@
   (cond
     [(equal? peeked i-byte) (read-integer reader)]
     [(equal? peeked l-byte) (read-list reader)]
-    [(equal? peeked d-byte) (read-list reader)]
+    [(equal? peeked d-byte) (read-dict reader)]
     [(string->number (bytes->string/utf8 (bytes peeked))) (read-string reader)]
     [else (error! "unexpected bencoded value")]))
 
