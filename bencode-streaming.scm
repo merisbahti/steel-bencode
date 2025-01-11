@@ -77,7 +77,7 @@
 (read-bencoded-value (make-output-string "i13e"))
 (read-bencoded-value (make-output-string "5:hello"))
 
-(assert (read-bencoded-value (make-output-string "l5:helloe")) '("hello"))
+(assert (read-bencoded-value (make-output-string "l6:hello\nee")) '("hello\n"))
 (assert (read-bencoded-value (make-output-string "l5:helloi13ee")) '("hello" 13))
 (assert (read-bencoded-value (make-output-string "ll5:helloi13eee")) (list (list "hello" 13)))
 
