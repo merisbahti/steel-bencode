@@ -12,7 +12,7 @@
   (define process-stdout (child-stdout process))
   process-stdout)
 
-(define (read-bencoded-string reader)
+(define (read-string reader)
   (define nrbuff (bytes))
 
   (while (string->number (bytes->string/utf8 (bytes (peek-byte reader))))
@@ -26,9 +26,7 @@
 
   (bytes->string/utf8 (read-bytes (string->number parsed-nr) reader)))
 
-(assert (read-bencoded-string (make-output-string "5:hello")) "hello")
-(assert (read-bencoded-string (make-output-string "3hello")) "hello")
-(assert (read-bencoded-string (make-output-string "3:hello")) "hello")
+(assert (read-string (make-output-string "5:hello")) "hello")
 
 (define (read-integer reader)
   (define firstchar (peek-byte reader))
@@ -44,15 +42,32 @@
 (assert (read-integer (make-output-string "ie")) #false)
 (assert (read-integer (make-output-string "i1.3e")) 1.3)
 
+(define (read-list reader)
+
+  (let [(first (read-byte reader))]
+    (unless (equal? first l-byte)
+      (error! (string-append "err, expected l but found: " (to-string first) (to-string l-byte) (equal? l-byte first)))))
+  (define parsed-list (mutable-vector))
+
+  (while (not (equal? (peek-byte reader) e-byte))
+    (vector-push! parsed-list (read-bencoded-value reader)))
+
+  (vector->list parsed-list))
+
 (define (read-bencoded-value reader)
-  (define peeked (bytes->string/utf8 (bytes (peek-byte reader))))
-  (displayln peeked)
+  (define peeked (peek-byte reader))
   (cond
-    [(string->number peeked) (read-bencoded-string reader)]
-    [(equal? peeked "i") (read-integer reader)]
+    [(equal? peeked i-byte) (read-integer reader)]
+    [(equal? peeked l-byte) (read-list reader)]
+    [(equal? peeked d-byte) (read-list reader)]
+    [(string->number (bytes->string/utf8 (bytes peeked))) (read-string reader)]
     [else (error! "unexpected bencoded value")]))
 
 (read-bencoded-value (make-output-string "i13e"))
 (read-bencoded-value (make-output-string "5:hello"))
+
+(assert (read-bencoded-value (make-output-string "l5:helloe")) '("hello"))
+(assert (read-bencoded-value (make-output-string "l5:helloi13ee")) '("hello" 13))
+(assert (read-bencoded-value (make-output-string "ll5:helloi13eee")) (list (list "hello" 13)))
 
 ;;;
