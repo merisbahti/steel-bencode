@@ -5,6 +5,7 @@
 (require-builtin steel/tcp)
 (require "./test.scm")
 (require "./bencode.scm")
+(require "./bencode-streaming.scm")
 
 (define nrepl-command
   (command "clj"
@@ -43,10 +44,12 @@
 
 (define reader (tcp-stream-reader stream))
 (define writer (tcp-stream-writer stream))
-(write-string (bencode (hash "op" "eval" "code" "(+ 1337\n1)")) writer)
+(define op (hash "op" "eval" "code" "(+ 1337)"))
+(define sent (bencode op))
+(displayln "sending " op " as " sent)
+(write-string sent writer)
 
-(displayln "hello")
-(displayln (read-line-from-port reader))
+(displayln (read-bencoded-value reader))
 
 ; (displayln (read-until-eof reader))
 

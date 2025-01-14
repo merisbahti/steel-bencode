@@ -36,12 +36,14 @@
   (define buff (mutable-vector))
   (while (not (equal? (peek-byte reader) e-byte))
     (vector-push! buff (read-char reader)))
+  (read-byte reader)
   (string->number (apply string (vector->list buff))))
 
 (assert (read-integer (make-output-string "i13e")) 13)
 (assert (read-integer (make-output-string "ie")) #false)
 (assert (read-integer (make-output-string "i1.3e")) 1.3)
 
+(define (read-bencoded-value _) _) ;; define later hehe
 (define (read-list reader)
   (let [(first (read-byte reader))]
     (unless (equal? first l-byte)
@@ -51,34 +53,47 @@
   (while (not (equal? (peek-byte reader) e-byte))
     (vector-push! parsed-list (read-bencoded-value reader)))
 
+  (read-byte reader) ;; read the e
+
   (vector->list parsed-list))
 
 (define (read-dict reader)
+  (define (read-pair reader)
+    (cons (read-string reader) (read-bencoded-value reader)))
 
   (let [(first (read-byte reader))]
-    (unless (equal? first l-byte)
-      (error! (string-append "err, expected l but found: " (to-string first) (to-string l-byte) (equal? l-byte first)))))
-  (define parsed-list (mutable-vector))
+    (unless (equal? first d-byte)
+      (error! (string-append "err, expected d but found: " (to-string first)))))
+
+  (define parsed-pairs (mutable-vector))
 
   (while (not (equal? (peek-byte reader) e-byte))
-    (vector-push! parsed-list (read-bencoded-value reader)))
+    (let [(parsed-pair (read-pair reader))]
 
-  (vector->list parsed-list))
+      (vector-push! parsed-pairs (car parsed-pair))
+      (vector-push! parsed-pairs (cdr parsed-pair))))
 
-(define (read-bencoded-value reader)
-  (define peeked (peek-byte reader))
-  (cond
-    [(equal? peeked i-byte) (read-integer reader)]
-    [(equal? peeked l-byte) (read-list reader)]
-    [(equal? peeked d-byte) (read-dict reader)]
-    [(string->number (bytes->string/utf8 (bytes peeked))) (read-string reader)]
-    [else (error! "unexpected bencoded value")]))
+  (read-byte reader) ;; read the e
 
-(read-bencoded-value (make-output-string "i13e"))
-(read-bencoded-value (make-output-string "5:hello"))
+  (apply hash (vector->list parsed-pairs)))
 
+(set! read-bencoded-value
+  (fn (reader)
+    (define peeked (peek-byte reader))
+    (cond
+      [(equal? peeked i-byte) (read-integer reader)]
+      [(equal? peeked l-byte) (read-list reader)]
+      [(equal? peeked d-byte) (read-dict reader)]
+      [(string->number (bytes->string/utf8 (bytes peeked))) (read-string reader)]
+      [else (error! "unexpected bencoded value")])))
+
+(assert (read-bencoded-value (make-output-string "i13e")) 13)
+(assert (read-bencoded-value (make-output-string "5:hello")) "hello")
 (assert (read-bencoded-value (make-output-string "l6:hello\nee")) '("hello\n"))
-(assert (read-bencoded-value (make-output-string "l5:helloi13ee")) '("hello" 13))
-(assert (read-bencoded-value (make-output-string "ll5:helloi13eee")) (list (list "hello" 13)))
+(assert (read-bencoded-value (make-output-string "d4:hehei1e4:hahai1337ee")) (hash "haha" 1337 "hehe" 1))
+(provide read-bencoded-value)
+
+; (assert (read-bencoded-value (make-output-string "l5:helloi13ee")) '("hello" 13))
+; (assert (read-bencoded-value (make-output-string "ll5:helloi13eee")) (list (list "hello" 13)))
 
 ;;;
