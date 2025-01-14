@@ -44,11 +44,14 @@
 
 (define reader (tcp-stream-reader stream))
 (define writer (tcp-stream-writer stream))
-(define op (hash "op" "eval" "code" "(+ 1337)"))
+
+(define op (hash "op" "eval" "code" "(map println [1 2 3])"))
 (define sent (bencode op))
 (displayln "sending " op " as " sent)
 (write-string sent writer)
 
+(displayln (read-bencoded-value reader))
+(displayln (read-bencoded-value reader))
 (displayln (read-bencoded-value reader))
 
 ; (displayln (read-until-eof reader))
