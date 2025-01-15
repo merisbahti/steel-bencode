@@ -5,7 +5,6 @@
 (require-builtin steel/tcp)
 (require "./test.scm")
 (require "./bencode.scm")
-(require "./bencode-streaming.scm")
 
 (define nrepl-command
   (command "clj"

@@ -42,213 +42,100 @@
 
 (assert (bencode (hash)) "de")
 
-(define (parse-error . values) (Err (string-join
-                                     (map (fn (x) (if (string? x) x (to-string x))) values))))
-(define (parse-ok value rest) (cons value rest))
+(define e-byte (bytes-ref (string->bytes "e") 0))
+(define i-byte (bytes-ref (string->bytes "i") 0))
+(define l-byte (bytes-ref (string->bytes "l") 0))
+(define d-byte (bytes-ref (string->bytes "d") 0))
 
-(define (parse-const constant)
-  (fn (input)
-    (if
-      (starts-with? input constant)
-      (parse-ok constant (substring input (string-length constant)))
-      (parse-error "Expected " constant " but found: " input))))
+(define (make-output-string str)
+  (define cmd (command "echo" (list str)))
+  (set-piped-stdout! cmd)
+  (define process (Ok->value (spawn-process cmd)))
+  (define process-stdout (child-stdout process))
+  process-stdout)
 
-(assert ((parse-const "hello") "hello world") (parse-ok "hello" " world"))
-(assert ((parse-const "hellox") "hello world") (parse-error "Expected hellox but found: hello world"))
+(define (read-string reader)
+  (define nrbuff (bytes))
 
-(define (parse-map parser mapper)
-  (fn (input)
-    (define result (parser input))
-    (if (Err? result) result (cons (mapper (car result)) (cdr result)))))
-(assert ((parse-map (parse-const "1") string->int) "1") (parse-ok 1 ""))
-(assert ((parse-map (parse-const "1") string->int) "0") (parse-error "Expected 1 but found: 0"))
+  (while (string->number (bytes->string/utf8 (bytes (peek-byte reader))))
+    (bytes-push! nrbuff (read-byte reader)))
 
-(define (parse-pred pred)
-  (fn (input)
-    (when (eq? (string-length input) 0) (return! (parse-error "Applied parse-pred to empty string")))
-    (define first-char (substring input 0 1))
-    (if
-      (pred first-char)
-      (parse-ok first-char (substring input 1))
-      (parse-error "char did not match predicate: " first-char))))
-(assert ((parse-pred string->number) "1") (parse-ok "1" ""))
-(assert ((parse-pred string->number) "d") (parse-error "char did not match predicate: d"))
+  (define parsed-nr (bytes->string/utf8 nrbuff))
+  (unless parsed-nr (error! "expected number, but found " nrbuff))
 
-(define (parse-many parser)
-  (parse-map
-    (fn (input)
-      (define (iter input acc)
-        (when (empty? input) (return! acc))
-        (define result (parser input))
+  (let [(nextchar (read-char reader))]
+    (unless (equal? nextchar #\:) (error! (string-append "expected `:` but found: " (to-string nextchar)))))
 
-        (if (Err? result)
-          (parse-ok acc input)
-          (iter (cdr result) (immutable-vector-push acc (car result)))))
-      (iter input (immutable-vector)))
-    immutable-vector->list))
+  (bytes->string/utf8 (read-bytes (string->number parsed-nr) reader)))
 
-(assert ((parse-many (parse-const "a")) "aaaaab") (parse-ok '("a" "a" "a" "a" "a") "b"))
-(assert ((parse-many (parse-const "a")) "qaaaaab") (parse-ok '() "qaaaaab"))
+(assert (read-string (make-output-string "5:hello")) "hello")
 
-(define (parse-integer)
-  (fn (input)
-    (define parsed ((parse-many (parse-pred string->number)) input))
+(define (read-integer reader)
+  (define firstchar (peek-byte reader))
+  (when (not (equal? firstchar i-byte))
+    (return! (None)))
+  (read-char reader) ;; read the i-byte
+  (define buff (mutable-vector))
+  (while (not (equal? (peek-byte reader) e-byte))
+    (vector-push! buff (read-char reader)))
+  (read-byte reader)
+  (string->number (apply string (vector->list buff))))
 
-    (if
-      (null? (car parsed))
-      (parse-error "Expected number but found: " input)
-      (parse-ok (string->number (string-join (car parsed))) (cdr parsed)))))
+(assert (read-integer (make-output-string "i13e")) 13)
+(assert (read-integer (make-output-string "ie")) #false)
+(assert (read-integer (make-output-string "i1.3e")) 1.3)
 
-(assert ((parse-integer) "10") (parse-ok 10 ""))
-(assert ((parse-integer) "asbc") (parse-error "Expected number but found: asbc"))
+(define (read-bencoded-value _) _) ;; define later hehe
+(define (read-list reader)
+  (let [(first (read-byte reader))]
+    (unless (equal? first l-byte)
+      (error! (string-append "err, expected l but found: " (to-string first)))))
+  (define parsed-list (mutable-vector))
 
-(define (parse-maybe parser)
-  (fn (input)
-    (define result (parser input))
-    (if (Err? result)
-      (cons '() input)
-      result)))
+  (while (not (equal? (peek-byte reader) e-byte))
+    (vector-push! parsed-list (read-bencoded-value reader)))
 
-(define (parse-one . xs)
-  (fn (input)
-    (if (empty? xs) (parse-error "No valid parsers passed to " (function-name parse-one)))
-    (define (iter parsers errors-so-far)
-      (if (null? parsers) (return! (Err errors-so-far)))
-      (define current-result ((car parsers) input))
-      (if
-        (pair? current-result)
-        current-result
-        (iter (cdr parsers) (cons current-result errors-so-far))))
-    (define result (iter xs '()))
-    (if
-      (Err? result)
-      (parse-error
-        "Got the following failures:\n"
-        (string-join (map (fn (x) (~> x (Err->value) (string-append "\n"))) (Err->value result))))
-      result)))
-(assert ((parse-one (parse-const "a") (parse-const "b")) "abb") (parse-ok "a" "bb"))
-(assert ((parse-one (parse-const "a") (parse-const "b")) "baa") (parse-ok "b" "aa"))
-(assert ((parse-one (parse-const "a") (parse-const "b")) "q")
-  (Err
-    "Got the following failures:\nExpected b but found: q\nExpected a but found: q\n"))
+  (read-byte reader) ;; read the e
 
-(define (parse-all . xs) (fn (input)
-                          (define (iter parsers input acc)
-                            (when (empty? parsers) (return! (cons (reverse acc) input)))
+  (vector->list parsed-list))
 
-                            (define result ((car parsers) input))
-                            (if (Err? result)
-                              result
-                              (iter (cdr parsers) (cdr result) (cons (car result) acc))))
-                          (iter xs input '())))
-(assert ((parse-all (parse-const "a") (parse-const "b")) "abb") (parse-ok (list "a" "b") "b"))
-(assert ((parse-all (parse-const "a") (parse-const "b")) "aqb") (parse-error "Expected b but found: qb"))
+(define (read-dict reader)
+  (define (read-pair reader)
+    (cons (read-string reader) (read-bencoded-value reader)))
 
-(define (parse-number)
-  (parse-map
-    (parse-one
-      (parse-all
-        (parse-maybe (parse-const "-"))
-        (parse-integer)
-        (parse-const ".")
-        (parse-integer))
-      (parse-all
-        (parse-maybe (parse-const "-"))
-        (parse-integer)))
-    (fn (values)
-      (define multiplier (if (null? (car values)) 1 -1))
-      (* multiplier (string->number (string-join (map to-string (cdr values))))))))
+  (let [(first (read-byte reader))]
+    (unless (equal? first d-byte)
+      (error! (string-append "err, expected d but found: " (to-string first)))))
 
-(assert ((parse-number) "-1") (parse-ok -1 ""))
-(assert ((parse-number) "1") (parse-ok 1 ""))
-(assert ((parse-number) "-0") (parse-ok 0 ""))
-(assert ((parse-number) "-1000") (parse-ok -1000 ""))
+  (define parsed-pairs (mutable-vector))
 
-(assert ((parse-number) "-1.1000") (parse-ok -1.1000 ""))
+  (while (not (equal? (peek-byte reader) e-byte))
+    (let [(parsed-pair (read-pair reader))]
 
-(assert ((parse-number) "1234567890") (parse-ok 1234567890 ""))
-(assert ((parse-number) "1234567890hello") (parse-ok 1234567890 "hello"))
+      (vector-push! parsed-pairs (car parsed-pair))
+      (vector-push! parsed-pairs (cdr parsed-pair))))
 
-(define (parse-byte-string)
-  (fn (input)
-    (define initial-result
-      ((parse-all
-          (parse-integer)
-          (parse-const ":"))
-        input))
+  (read-byte reader) ;; read the e
 
-    (when (Err? initial-result) (return! initial-result))
+  (apply hash (vector->list parsed-pairs)))
 
-    (define bytes-to-parse (caar initial-result))
-    (define input (cdr initial-result))
+(set! read-bencoded-value
+  (fn (reader)
+    (define peeked (peek-byte reader))
+    (cond
+      [(equal? peeked i-byte) (read-integer reader)]
+      [(equal? peeked l-byte) (read-list reader)]
+      [(equal? peeked d-byte) (read-dict reader)]
+      [(string->number (bytes->string/utf8 (bytes peeked))) (read-string reader)]
+      [else (error! "unexpected bencoded value")])))
 
-    (define symbol-length (length (string->list input)))
+(assert (read-bencoded-value (make-output-string "i13e")) 13)
+(assert (read-bencoded-value (make-output-string "5:hello")) "hello")
+(assert (read-bencoded-value (make-output-string "l6:hello\nee")) '("hello\n"))
+(assert (read-bencoded-value (make-output-string "d4:hehei1e4:hahai1337ee")) (hash "haha" 1337 "hehe" 1))
+(provide read-bencoded-value)
 
-    (define buffer (~>
-                    (substring input 0 (min symbol-length bytes-to-parse))
-                    (string->bytes)
-                    (bytes->list)))
+; (assert (read-bencoded-value (make-output-string "l5:helloi13ee")) '("hello" 13))
+; (assert (read-bencoded-value (make-output-string "ll5:helloi13eee")) (list (list "hello" 13)))
 
-    (when (> bytes-to-parse (length buffer)) (return! (parse-error "not enough bytes to parse in buffer: " input)))
-    (define bytes (take buffer bytes-to-parse))
-    (define rest (drop buffer (min (length buffer) bytes-to-parse)))
-
-    (parse-ok
-      (bytes->string/utf8 (list->bytes bytes))
-      (string-append
-        (bytes->string/utf8 (list->bytes rest))
-        (substring input (min symbol-length bytes-to-parse))))))
-
-(assert ((parse-byte-string) "3:hello") (parse-ok "hel" "lo"))
-(assert ((parse-byte-string) "3:hello") (parse-ok "hel" "lo"))
-(assert ((parse-byte-string) (bencode "ö")) (parse-ok "ö" ""))
-(assert ((parse-byte-string) "2:ö") (parse-ok "ö" ""))
-(assert ((parse-byte-string) "3:2") (parse-error "not enough bytes to parse in buffer: 2"))
-(define (parse-bencode-number)
-  (parse-map
-    (parse-all
-      (parse-const "i")
-      (parse-number)
-      (parse-const "e"))
-    cadr))
-
-(assert ((parse-bencode-number) "i1e") (parse-ok 1 ""))
-
-(define (bencode-parse)
-  (parse-one
-    (parse-byte-string)
-    (parse-bencode-number)
-    (parse-map (fn (input) ((parse-all
-                              (parse-const "l")
-                              (parse-many (bencode-parse))
-                              (parse-const "e"))
-                            input))
-      cadr)
-    (parse-map (fn (input) ((parse-all
-                              (parse-const "d")
-                              (parse-many (parse-all
-                                           (parse-byte-string)
-                                           (bencode-parse)))
-                              (parse-const "e"))
-                            input))
-      (fn (value) (transduce (cadr value) (into-hashmap))))))
-
-(assert ((bencode-parse) "le") (parse-ok '() ""))
-(assert ((bencode-parse) "li1e4:hehee") (parse-ok '(1 "hehe") ""))
-(assert ((bencode-parse) "d4:hehei1eestuff") (parse-ok (hash "hehe" 1) "stuff"))
-(assert ((bencode-parse) "d4:hehei1e4:hahai1337eestuff") (parse-ok (hash "hehe" 1 "haha" 1337) "stuff"))
-(provide bencode-decode)
-(define (bencode-decode input)
-  (define parsed ((bencode-parse) (trim input)))
-
-  (cond
-    [(Err? parsed) parsed]
-    [(equal? (cdr parsed) "") (car parsed)]
-    [else (parse-error "parsed bencoded value, but found rest: " (cdr parsed))]))
-
-(assert (bencode-decode "le") '())
-(assert (bencode-decode "li1e4:hehee") '(1 "hehe"))
-(assert (bencode-decode "d4:hehei1eestuff") (parse-error "parsed bencoded value, but found rest: stuff"))
-(assert (bencode-decode "d4:hehei1e4:hahai1337eestuff") (parse-error "parsed bencoded value, but found rest: stuff"))
-(assert (bencode-decode "d4:hehei1ee") (hash "hehe" 1))
-(assert (bencode-decode "d4:hehei1e4:hahai1337ee") (hash "hehe" 1 "haha" 1337))
+;
